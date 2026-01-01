@@ -499,7 +499,7 @@ async def crawl_and_generate_csp(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(
-        prog="csp-crawl",
+        prog="cspresso",
         description="Crawl up to N pages (same-origin) with Playwright and generate a draft CSP.",
     )
     ap.add_argument("url", help="Start URL (e.g. https://example.com)")
