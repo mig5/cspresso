@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="320" viewBox="0 0 420 320" role="img" aria-label="cspresso logo mark">
+  <defs>
+    <linearGradient id="gCup" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1a1a"/>
+      <stop offset="1" stop-color="#3a3a3a"/>
+    </linearGradient>
+
+    <linearGradient id="gSteam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111" stop-opacity="0.0"/>
+      <stop offset="0.35" stop-color="#111" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#111" stop-opacity="0.0"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="blur"/>
+      <feOffset dx="0" dy="6" result="off"/>
+      <feColorMatrix in="off" type="matrix"
+        values="0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0.28 0" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <clipPath id="cupClip">
+      <path d="M92 194c0 26 22 46 50 46h96c28 0 50-20 50-46v-74H92v74z"/>
+    </clipPath>
+  </defs>
+
+  <g transform="translate(20,18)" filter="url(#softShadow)">
+    <!-- steam curls -->
+    <g fill="none" stroke="url(#gSteam)" stroke-width="10" stroke-linecap="round">
+      <path d="M170 18c-14 16-14 32 0 48s14 32 0 48" />
+      <path d="M210 10c-18 18-18 36 0 54s18 36 0 54" />
+      <path d="M250 18c-14 16-14 32 0 48s14 32 0 48" />
+    </g>
+
+    <!-- cup -->
+    <path d="M92 120h196v74c0 26-22 46-50 46h-96c-28 0-50-20-50-46v-74z"
+          fill="url(#gCup)"/>
+    <!-- lip -->
+    <path d="M84 120c0-18 16-32 36-32h180c20 0 36 14 36 32"
+          fill="none" stroke="#111" stroke-width="12" stroke-linecap="round"/>
+
+    <!-- handle -->
+    <path d="M288 142h24c26 0 48 20 48 44s-22 44-48 44h-22"
+          fill="none" stroke="#222" stroke-width="14" stroke-linecap="round"/>
+    <path d="M290 158h18c16 0 30 12 30 28s-14 28-30 28h-16"
+          fill="none" stroke="#2f2f2f" stroke-width="10" stroke-linecap="round"/>
+
+    <!-- foam -->
+    <g clip-path="url(#cupClip)">
+      <rect x="92" y="122" width="196" height="74" fill="#f4f1ea" opacity="0.96"/>
+
+      <!-- short CSP-ish token -->
+      <g transform="translate(122,148)">
+        <!-- a tiny "directive" pill -->
+        <rect x="0" y="0" width="150" height="34" rx="17" fill="#121212" opacity="0.92"/>
+        <text x="75" y="23"
+              font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+              font-size="18" font-weight="700" fill="#f4f1ea" text-anchor="middle">
+          'cspresso'
+        </text>
+      </g>
+
+      <!-- subtle scanlines -->
+      <g opacity="0.08" stroke="#000" stroke-width="2">
+        <path d="M90 140h200"/>
+        <path d="M90 156h200"/>
+        <path d="M90 172h200"/>
+        <path d="M90 188h200"/>
+      </g>
+    </g>
+
+    <!-- saucer -->
+    <path d="M58 254c22 20 84 30 132 30s110-10 132-30"
+          fill="none" stroke="#1a1a1a" stroke-width="14" stroke-linecap="round" opacity="0.9"/>
+    <path d="M76 254c18 14 70 22 114 22s96-8 114-22"
+          fill="none" stroke="#3a3a3a" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+  </g>
+</svg>
+
