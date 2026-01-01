@@ -81,9 +81,9 @@ poetry run cspresso https://example.com --json
 ## Full usage info
 
 ```
-usage: csp-crawl [-h] [--max-pages MAX_PAGES] [--timeout-ms TIMEOUT_MS] [--settle-ms SETTLE_MS] [--headed] [--no-install] [--with-deps] [--browsers-path BROWSERS_PATH] [--allow-blob] [--unsafe-eval]
-                 [--upgrade-insecure-requests] [--include-sourcemaps] [--json]
-                 url
+usage: cspresso [-h] [--max-pages MAX_PAGES] [--timeout-ms TIMEOUT_MS] [--settle-ms SETTLE_MS] [--headed] [--no-install] [--with-deps] [--browsers-path BROWSERS_PATH] [--allow-blob] [--unsafe-eval]
+                [--upgrade-insecure-requests] [--include-sourcemaps] [--ignore-non-html] [--json]
+                url
 
 Crawl up to N pages (same-origin) with Playwright and generate a draft CSP.
 
@@ -108,5 +108,6 @@ options:
   --upgrade-insecure-requests
                         Add upgrade-insecure-requests directive
   --include-sourcemaps  Analyze JS/CSS for sourceMappingURL and add map origins to connect-src
+  --ignore-non-html     Ignore non-HTML pages that get crawled (which might trigger Chromium's word-wrap hash: https://stackoverflow.com/a/69838710)
   --json                Output JSON instead of a header line
 ```

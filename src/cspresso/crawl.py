@@ -307,6 +307,7 @@ async def crawl_and_generate_csp(
     allow_unsafe_eval: bool = False,
     upgrade_insecure_requests: bool = False,
     include_sourcemaps: bool = False,
+    ignore_non_html: bool = False,
 ) -> CrawlResult:
     start_url, _ = urldefrag(start_url)
     base_origin = origin_of(start_url)
@@ -413,7 +414,18 @@ async def crawl_and_generate_csp(
                 page.on("response", on_response)
 
             try:
-                await page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+                resp = await page.goto(
+                    url, wait_until="networkidle", timeout=timeout_ms
+                )
+
+                ct = ""
+                if resp is not None:
+                    ct = (await resp.header_value("content-type") or "").lower()
+
+                is_html = ("text/html" in ct) or ("application/xhtml+xml" in ct)
+                if not is_html and ignore_non_html:
+                    # Still count as visited, but don't hash inline attrs / don't extract links.
+                    continue
 
                 # Give the page a moment to run hydration / delayed fetches.
                 if settle_ms > 0:
@@ -566,6 +578,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Analyze JS/CSS for sourceMappingURL and add map origins to connect-src",
     )
     ap.add_argument(
+        "--ignore-non-html",
+        action="store_true",
+        default=False,
+        help="Ignore non-HTML pages that get crawled (which might trigger Chromium's word-wrap hash: https://stackoverflow.com/a/69838710)",
+    )
+    ap.add_argument(
         "--json", action="store_true", help="Output JSON instead of a header line"
     )
     return ap.parse_args(argv)
@@ -589,6 +607,7 @@ def main(argv: list[str] | None = None) -> None:
             allow_unsafe_eval=args.unsafe_eval,
             upgrade_insecure_requests=args.upgrade_insecure_requests,
             include_sourcemaps=args.include_sourcemaps,
+            ignore_non_html=args.ignore_non_html,
         )
     )
 
