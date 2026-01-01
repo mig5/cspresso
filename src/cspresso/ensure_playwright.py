@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import subprocess  # nosec
 import sys
 import tempfile
 import time
@@ -145,7 +145,7 @@ def _release_install_lock(lock_path: Path) -> None:
     try:
         lock_path.unlink(missing_ok=True)
     except Exception:
-        pass
+        pass  # nosec
 
 
 def _install_chromium(browsers_path: Path, with_deps: bool = False) -> None:
