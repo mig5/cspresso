@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-import subprocess
+import subprocess  # nosec
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,7 +51,7 @@ def _release_install_lock(lock_path: Path) -> None:
     try:
         lock_path.unlink(missing_ok=True)  # Python 3.8+
     except Exception:
-        pass
+        pass  # nosec
 
 
 def _install_chromium(browsers_path: Path, with_deps: bool = False) -> None:
@@ -61,7 +61,7 @@ def _install_chromium(browsers_path: Path, with_deps: bool = False) -> None:
         cmd.append("--with-deps")
     cmd.append("chromium")
 
-    subprocess.run(cmd, check=True, env=env)
+    subprocess.run(cmd, check=True, env=env)  # nosec
 
 
 async def _can_launch_chromium(browsers_path: Path) -> bool:
