@@ -55,7 +55,7 @@ def test_include_sourcemaps_adds_jsdelivr_to_connect_src():
     res = asyncio.run(
         crawl_and_generate_csp(
             "https://enroll.sh",
-            max_pages=1,          # faster; bootstrap assets are on the homepage
+            max_pages=1,  # faster; bootstrap assets are on the homepage
             timeout_ms=60000,
             include_sourcemaps=True,
         )
@@ -109,4 +109,3 @@ def test_parse_csp_smoke():
     assert d["default-src"] == ["'self'"]
     assert d["object-src"] == ["'none'"]
     assert d["upgrade-insecure-requests"] == []
-
