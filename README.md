@@ -23,6 +23,10 @@ This is meant as a **starting point**. Review and tighten the resulting policy b
 
 ## Install
 
+If using my artifacts from the Releases page, you may wish to verify the GPG signatures with the key.
+
+It can be found at https://mig5.net/static/mig5.asc . The fingerprint is `00AE817C24A10C2540461A9C1D7CDE0234DB458D`.
+
 ### Poetry
 
 ```bash
@@ -42,7 +46,7 @@ Download the CSPresso.AppImage from the releases page, make it executable with `
 ## Run
 
 ```bash
-poetry run cspresso https://example.com --max-pages 10
+cspresso https://example.com --max-pages 10
 ```
 
 The tool will:
