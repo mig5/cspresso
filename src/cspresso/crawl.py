@@ -453,7 +453,7 @@ async def crawl_and_generate_csp(
                         "}, true); } catch(_){} }"
                     )
                 except Exception:
-                    pass
+                    pass  # nosec
 
                 def _on_console(msg):
                     try:
