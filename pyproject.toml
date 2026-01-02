@@ -6,6 +6,7 @@ authors = ["Miguel Jacq <mig@mig5.net>"]
 readme = "README.md"
 packages = [{ include = "cspresso", from = "src" }]
 license = "GPL-3.0-or-later"
+homepage = "https://cspresso.cafe"
 repository = "https://git.mig5.net/mig5/cspresso"
 
 [tool.poetry.dependencies]
