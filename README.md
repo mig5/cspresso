@@ -18,7 +18,6 @@ This is meant as a **starting point**. Review and tighten the resulting policy b
 ## Requirements
 
 - Python 3.10+
-- Poetry
 - Playwright's Chromium browser binaries (auto-installed by this tool if missing)
 
 ## Install

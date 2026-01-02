@@ -403,7 +403,6 @@ async def crawl_and_generate_csp(
                                 directives.setdefault("connect-src", set()).add(o)
 
                     except Exception:
-                        # If you want to debug failures, print(traceback.format_exc())
                         return
 
                 def on_response(resp):
