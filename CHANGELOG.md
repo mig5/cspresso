@@ -1,3 +1,8 @@
+## 0.1.2
+
+ * Add `--bypass-csp` option to ignore an existing enforcing CSP to avoid it skewing results
+ * Add `--evaluate` option to test a proposed CSP without needing to install it (best to use in conjunction with --bypass-csp`)
+
 ## 0.1.1
 
  * Fix prog name
