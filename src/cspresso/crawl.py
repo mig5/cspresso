@@ -362,8 +362,22 @@ async def crawl_and_generate_csp(
                     if request.resource_type != "document":
                         return await route.continue_()
 
+                    # IMPORTANT: Don't rewrite CSP on third-party iframe/object documents.
+                    # Otherwise --evaluate / --bypass-csp will mutate embedded origins
+                    # (e.g. asciinema.org) and produce bogus frame-ancestors violations.
+                    req_origin = origin_of(request.url)
+                    if not req_origin or req_origin != base_origin:
+                        return await route.continue_()
+
                     resp = await route.fetch()
                     hdrs = {k.lower(): v for k, v in (resp.headers or {}).items()}
+
+                    # Only treat actual HTML documents as candidates for CSP header rewriting.
+                    # (Playwright classifies iframe navigations as "document" even when non-HTML.)
+                    ct = (hdrs.get("content-type") or "").lower()
+                    is_html = ("text/html" in ct) or ("application/xhtml+xml" in ct)
+                    if not is_html:
+                        return await route.fulfill(response=resp)
 
                     if bypass_csp:
                         hdrs.pop("content-security-policy", None)

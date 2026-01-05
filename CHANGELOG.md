@@ -1,3 +1,7 @@
+## 0.1.3
+
+ * Fix bug in `--evaluate` mode, which would inject the CSP into third party domains, which they would then throw violations for and trip the result
+
 ## 0.1.2
 
  * Add `--bypass-csp` option to ignore an existing enforcing CSP to avoid it skewing results

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cspresso"
-version = "0.1.2"
+version = "0.1.3"
 description = "Crawl a website with a headless browser and generate a draft Content-Security-Policy (CSP)."
 authors = ["Miguel Jacq <mig@mig5.net>"]
 readme = "README.md"
