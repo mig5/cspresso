@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urldefrag, urlparse
 
-from playwright.async_api import async_playwright
+from playwright.async_api import (
+    async_playwright,
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from .ensure_playwright import ensure_chromium_installed
 
@@ -528,9 +531,15 @@ async def crawl_and_generate_csp(
                 page.on("response", on_response)
 
             try:
-                resp = await page.goto(
-                    url, wait_until="networkidle", timeout=timeout_ms
-                )
+                resp = await page.goto(url, wait_until="load", timeout=timeout_ms)
+                try:
+                    await page.wait_for_load_state(
+                        "networkidle", timeout=min(5000, timeout_ms)
+                    )
+                except PlaywrightTimeoutError:
+                    notes.append(
+                        f"Timed out waiting for networkidle on {url}; continuing after load anyway."
+                    )
 
                 ct = ""
                 if resp is not None:
