@@ -1,3 +1,7 @@
+## 0.1.4
+
+ * Don't wait for networkidle, if it doesn't get that far but 'load' does
+
 ## 0.1.3
 
  * Fix bug in `--evaluate` mode, which would inject the CSP into third party domains, which they would then throw violations for and trip the result
