@@ -24,7 +24,7 @@ This is meant as a **starting point**. Review and tighten the resulting policy b
 
 If using my artifacts from the Releases page, you may wish to verify the GPG signatures with the key.
 
-It can be found at https://mig5.net/static/mig5.asc . The fingerprint is `00AE817C24A10C2540461A9C1D7CDE0234DB458D`.
+It can be found at https://mig5.net/static/mig5.asc . The fingerprint is `54A91143AE0AB4F7743B01FE888ED1B423A3BC99`.
 
 ### Poetry
 
