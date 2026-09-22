@@ -6,10 +6,13 @@ import subprocess  # nosec
 import sys
 import tempfile
 import time
+import stat
+import asyncio
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from playwright.async_api import async_playwright, Error as PlaywrightError
+from playwright.async_api import async_playwright
 
 __all__ = ["EnsureResult", "ensure_chromium_installed"]
 
@@ -115,60 +118,110 @@ def _env_with_browsers_path(browsers_path: Path) -> dict[str, str]:
     return env
 
 
+def configure_browsers_path(browsers_path: Path | None = None) -> str:
+    """Configure the driver before starting it, even when installation is disabled."""
+    if browsers_path is not None:
+        value = str(browsers_path.expanduser().absolute())
+    elif os.environ.get("PLAYWRIGHT_BROWSERS_PATH") == "0":
+        value = "0"  # Playwright's package-local installation convention.
+    else:
+        value = str(_default_browsers_path().absolute())
+    if value != "0":
+        _private_directory(Path(value))
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = value
+    return value
+
+
+def _private_directory(path: Path) -> None:
+    """Refuse executable caches controlled by another local user."""
+    path = path.absolute()
+    # Create/check one component at a time. Checking all missing ancestors and
+    # then mkdir(parents=True) would leave a pre-creation race in shared /tmp.
+    for part in reversed((path, *path.parents)):
+        try:
+            part.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        st = part.lstat()
+        if not stat.S_ISDIR(st.st_mode) or part.is_symlink():
+            raise OSError(f"Browser cache path is not a real directory: {part}")
+        if os.name != "nt":
+            if st.st_uid not in {0, os.getuid()}:
+                raise OSError(f"Browser cache ancestor has another owner: {part}")
+            if st.st_mode & 0o022 and not (st.st_mode & stat.S_ISVTX):
+                raise OSError(f"Browser cache ancestor is writable by others: {part}")
+            if part == path and (st.st_uid != os.getuid() or st.st_mode & 0o022):
+                raise OSError(
+                    f"Browser cache must be owned by you and not writable by others: {path}"
+                )
+
+
 def _is_writable_dir(path: Path) -> bool:
     try:
-        path.mkdir(parents=True, exist_ok=True)
-        probe = path / ".write_probe"
-        probe.write_text("x", encoding="utf-8")
-        probe.unlink(missing_ok=True)
+        _private_directory(path)
+        with tempfile.TemporaryFile(dir=path):
+            pass
         return True
     except OSError:
         return False
 
 
-def _acquire_install_lock(
-    lock_path: Path, timeout_s: float = 120.0, poll_s: float = 0.2
-) -> None:
-    start = time.time()
-    while True:
-        try:
-            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-            return
-        except FileExistsError:
-            if time.time() - start > timeout_s:
-                raise TimeoutError(f"Timed out waiting for install lock: {lock_path}")
-            time.sleep(poll_s)
-
-
-def _release_install_lock(lock_path: Path) -> None:
+@contextmanager
+def _install_lock(path: Path, timeout_s: float):
+    # Keep the inode: unlinking a lock file allows two independent locks.
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    if path.is_symlink():
+        raise OSError("Installation lock must not be a symlink")
+    fd = os.open(path, flags, 0o600)
     try:
-        lock_path.unlink(missing_ok=True)
-    except Exception:
-        pass  # nosec
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            raise OSError("Unsafe browser installation lock")
+        if os.name != "nt" and (st.st_uid != os.getuid() or st.st_mode & 0o022):
+            raise OSError("Unsafe browser installation lock permissions")
+        if st.st_size == 0:
+            os.write(fd, b"0")
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (BlockingIOError, PermissionError):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        "Timed out waiting for browser installation lock"
+                    )
+                time.sleep(0.1)
+        yield
+    finally:
+        os.close(fd)  # OS releases the lock, including after process death.
 
 
-def _install_chromium(browsers_path: Path, with_deps: bool = False) -> None:
-    env = _env_with_browsers_path(browsers_path)
-    py = _find_python_executable()
-
-    cmd = [py, "-m", "playwright", "install"]
+def _install_chromium(browsers_path: str, with_deps: bool = False) -> None:
+    cmd = [_find_python_executable(), "-m", "playwright", "install"]
     if with_deps:
         cmd.append("--with-deps")
     cmd.append("chromium")
-
-    subprocess.run(cmd, check=True, env=env)  # nosec
-
-
-async def _can_launch_chromium(browsers_path: Path) -> bool:
-    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_path)
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            await browser.close()
-        return True
-    except PlaywrightError:
-        return False
+        subprocess.run(
+            cmd,
+            check=True,
+            env=_env_with_browsers_path(browsers_path),
+            stdout=sys.stderr,
+            stderr=sys.stderr,
+        )  # nosec B603
+    except subprocess.SubprocessError as exc:
+        raise RuntimeError(
+            "Chromium installation failed; see installer diagnostics on stderr"
+        ) from exc
 
 
 async def ensure_chromium_installed(
@@ -177,47 +230,33 @@ async def ensure_chromium_installed(
     with_deps: bool = False,
     lock_timeout_s: float = 120.0,
 ) -> EnsureResult:
-    """
-    Ensure Playwright Chromium is installed and launchable.
-
-    - Honors PLAYWRIGHT_BROWSERS_PATH if set.
-    - Defaults to a user cache dir (safe for AppImage readonly mounts).
-    - Uses embedded python to run playwright installer when sys.executable is the AppImage.
-    """
-    explicit = browsers_path is not None
-    bp = browsers_path or _default_browsers_path()
-
-    # If it already works, do nothing.
-    if await _can_launch_chromium(bp):
-        return EnsureResult(browsers_path=bp, installed=False)
-
-    # If we need to install and the chosen dir isn't writable, fall back (unless explicit).
-    if not explicit and not _is_writable_dir(bp):
-        bp = _user_cache_dir() / "cspresso" / "pw-browsers"
-        if not _is_writable_dir(bp):
-            bp = Path(tempfile.gettempdir()) / "cspresso" / "pw-browsers"
-            bp.mkdir(parents=True, exist_ok=True)
-
-    if explicit and not _is_writable_dir(bp):
-        raise OSError(
-            f"Browsers path is not writable: {bp}\n"
-            "Choose a writable directory via --browsers-path or set PLAYWRIGHT_BROWSERS_PATH."
+    value = configure_browsers_path(browsers_path)
+    async with async_playwright() as p:
+        executable = Path(p.chromium.executable_path)
+    if value == "0":
+        bp = next(
+            parent.parent
+            for parent in executable.parents
+            if parent.name.startswith("chromium-")
         )
+    else:
+        bp = Path(value)
+    _private_directory(bp)
+    # Check installation, not launchability. Sandbox/library errors must not
+    # trigger reinstall attempts or silently weaken browser launch settings.
+    if executable.is_file():
+        return EnsureResult(bp, False)
 
-    lock_path = bp / ".install.lock"
-    _acquire_install_lock(lock_path, timeout_s=lock_timeout_s)
-    try:
-        if await _can_launch_chromium(bp):
-            return EnsureResult(browsers_path=bp, installed=False)
+    def install():
+        with _install_lock(bp / ".install.lock", lock_timeout_s):
+            if executable.is_file():
+                return False
+            _install_chromium(value, with_deps)
+            if not executable.is_file():
+                raise RuntimeError(
+                    "Chromium installer did not provide the expected executable"
+                )
+            return True
 
-        _install_chromium(bp, with_deps=with_deps)
-
-        if not await _can_launch_chromium(bp):
-            raise RuntimeError(
-                "Chromium install completed, but Chromium still failed to launch. "
-                "On Linux, you may need additional system dependencies."
-            )
-
-        return EnsureResult(browsers_path=bp, installed=True)
-    finally:
-        _release_install_lock(lock_path)
+    installed = await asyncio.to_thread(install)
+    return EnsureResult(bp, installed)

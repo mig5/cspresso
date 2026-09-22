@@ -19,15 +19,21 @@ jobs:
 
       - name: Install Poetry
         run: |
-          pipx install poetry==1.8.3
+          pipx install poetry==2.5.1
           /root/.local/bin/poetry --version
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install project deps (including test extras)
         run: |
-          poetry install --with dev
+          poetry check --lock --strict
+          poetry sync --with dev --no-interaction
 
       - name: Run test script
+        # These tests serve trusted loopback fixtures in the disposable Docker
+        # runner. Production CLI scans retain sandboxing by default. Prefer a
+        # non-root, sandbox-capable runner and remove this override when available.
+        env:
+          CSPRESSO_TEST_NO_SANDBOX: "1"
         run: |
           ./tests.sh
 

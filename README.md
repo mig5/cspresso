@@ -4,175 +4,221 @@
   <img src="https://git.mig5.net/mig5/cspresso/raw/branch/main/cspresso.svg" alt="CSPresso logo" width="240" />
 </div>
 
-Crawl up to *N* pages of a site using a headless Chromium (via Playwright), observe what assets are loaded, and emit a **draft** Content Security Policy (CSP).
+Observe a site using Chromium through Playwright and generate a **draft** Content
+Security Policy. Review every suggested permission before deployment. A crawl
+observes code; it cannot establish that the code is trustworthy or cover every
+user flow.
 
-This is meant as a **starting point**. Review and tighten the resulting policy before enforcing it.
+## Installation
 
-## Why "draft"?
-
-- A crawl rarely covers all user flows (auth-only pages, A/B tests, conditional loads, etc.).
-- Inline script/style handling is tricky:
-  - If your pages use nonces, you must generate a **new nonce per HTML response** and insert it both in the CSP header and in the HTML tags.
-  - Hashes work only if the inline content is stable *byte-for-byte*.
-
-## Requirements
-
-- Python 3.10+
-- Playwright's Chromium browser binaries (auto-installed by this tool if missing)
-
-## Install
-
-If using my artifacts from the Releases page, you may wish to verify the GPG signatures with the key.
-
-It can be found at https://mig5.net/static/mig5.asc . The fingerprint is `54A91143AE0AB4F7743B01FE888ED1B423A3BC99`.
-
-### Poetry
-
-```bash
-poetry install
-```
-
-### pip/pipx
+Requires Python 3.10+ and Playwright's Chromium binaries. Source development
+and release commands use Poetry >=2.2,<3 (CI pins Poetry 2.5.1).
 
 ```bash
 pip install cspresso
+# Or from this repository, using Poetry >=2.2,<3:
+poetry sync --with dev
 ```
 
-### AppImage
+Release AppImages can be made executable with `chmod +x CSPresso.AppImage`.
+Verify release signatures with the key at <https://mig5.net/static/mig5.asc>:
+`54A91143AE0AB4F7743B01FE888ED1B423A3BC99`.
 
-Download the CSPresso.AppImage from the releases page, make it executable with `chmod +x`, and run it.
-
-## Run
+If the browser executable is missing, CSPresso installs it automatically. Use
+`--no-install` to prohibit installation. `--with-deps` requests OS dependencies
+when installation is needed; alternatively install them explicitly:
 
 ```bash
-cspresso https://example.com --max-pages 10
+poetry run playwright install-deps chromium
 ```
 
-The tool will:
-1) attempt to launch Chromium headless
-2) if Chromium isn't installed, it will run: `python -m playwright install chromium`
-3) crawl same-origin links up to the page limit
-4) print the visited URLs and a CSP header
+An existing browser that fails to launch is **not** repeatedly reinstalled.
+Read the error for missing libraries, sandbox support or account restrictions.
 
-### Avoiding an existing enforcing CSP header during analysis
-
-**NOTE**: If you have an existing CSP header in place on your site, this could negatively influence
-`cspresso`'s ability to evaluate what's on the page. Consider adding `--bypass-csp` to ignore the
-current CSP (noting that if your site is compromised, doing so could put your machine at risk if
-it evaluates malicious javascript/css etc).
-
-See also the `--evaluate` option below.
-
-## Where Playwright installs browsers
-
-By default, this project installs Playwright browsers into a local folder: `./.pw-browsers`.
-This makes installs deterministic and easy to cache in CI.
-
-You can override with `--browsers-path` or by setting `PLAYWRIGHT_BROWSERS_PATH` yourself.
-
-## Linux notes
-
-If Chromium fails to start due to missing system libraries, try:
+## Discovery
 
 ```bash
-cspresso https://example.com --with-deps
+cspresso https://example.com/ --max-pages 10 --json
+cspresso https://example.com/ --bypass-csp --header-only
+cspresso https://example.com/docs/ --exclude '/logout*' --exclude '/delete/*'
 ```
 
-That runs `python -m playwright install --with-deps chromium` (may require sudo depending on your environment).
+Links use the browser's resolved URL, including the current document and
+`<base href>`. Only same-origin HTML documents are collected; non-HTML links
+are skipped. GET redirects within the origin are followed explicitly at their
+real URL because Playwright's routing does not intercept automatic redirect
+hops. This can change redirect timing/history. Top-level redirects outside the
+origin are rejected: start with the canonical HTTPS/www URL instead. Non-GET
+redirects are not replayed; delayed redirects after initial load are reported
+as incomplete and should be scanned using an explicit final URL.
 
-## Output
+`--exclude` applies to top-level navigation URLs/paths, not every subresource.
+It is a crawl-scope control, not a network firewall. Third-party assets and
+frames still load. Resources inside foreign frames do not become permissions
+for the parent document. Same-origin and inherited-policy `about:blank`/`srcdoc`
+frames are included.
 
-Default output is a single CSP header line.
+Default text output contains comments and a `Content-Security-Policy:` line.
+`--header-only` prints just the policy value, with diagnostics on stderr.
+Installer messages also go to stderr, keeping `--json` output parseable.
 
-For JSON:
+## Chromium sandbox versus CSP bypass
+
+**The Chromium process sandbox is enabled by default.** It contains browser
+processes; it does not filter ordinary script/style origins or prevent the
+resource observations needed to build a CSP. Run as a non-root user with OS
+sandbox support.
+
+`--bypass-csp` removes existing CSP and report-only **response headers** from
+same-origin HTML. This is the option for discovering resources otherwise
+blocked by the site's existing policy. It does not disable the process sandbox
+and does not remove meta-delivered CSP. Remaining meta CSP is reported; in
+evaluation mode it makes the result incomplete.
+
+If a site is compromised, bypassing its CSP may enable malicious code that was
+previously blocked. A browser sandbox is useful containment, not an assurance
+that malicious sites are safe. See [SECURITY.md](SECURITY.md).
+
+`--no-sandbox` is an explicit escape hatch for trusted scans inside suitable
+external isolation. It is never selected automatically after a launch failure.
+It is not needed to improve CSP discovery.
+
+## Evaluate a proposed policy
 
 ```bash
-cspresso https://example.com --json
+cspresso https://example.com/ --bypass-csp \
+  --evaluate "default-src 'self'; object-src 'none'" --json
+
+cspresso https://example.com/ --bypass-csp --evaluate-file candidate-csp.txt --json
 ```
 
+The candidate is injected as `Content-Security-Policy-Report-Only`; Chromium
+reports violations without blocking those resources. An existing enforcing
+header that remains in place makes evaluation incomplete, because it can hide
+behavior from the candidate. Existing report-only headers are replaced during
+evaluation, while foreign documents are not rewritten.
 
-## Evaluate a proposed CSP without installing it
+Exit codes:
 
-You can use `cspresso` to evaluate a *proposed* CSP against a site. When you do this, cspresso converts
-the response from the website to implant `Content-Security-Policy-Report-Only` headers using the CSP
-you supplied to `--evaluate`. If it detects any violations, it will report them and exit with code 1,
-which may be useful for CSP.
+| Code | Meaning |
+| --- | --- |
+| 0 | The selected scan completed without observed candidate violations. This is not a guarantee of complete application coverage. |
+| 1 | The selected scan completed and candidate violations were observed. |
+| 2 | Invalid input, runtime failure or incomplete scan. Check `errors`, including when violations also exist. |
 
-**NOTE**: It is highly recommended to use `--bypass-csp` in addition to `--evaluate`, so that your
-results are not influenced by any existing CSP's enforcement.
+Zero/negative budgets and empty candidate policies are rejected. Failed
+interception never silently retries an uninstrumented navigation. Injection is
+confirmed for collected documents, and violations are attributed to the
+candidate and relevant frames. Browser diagnostics about rejected policy syntax
+also make evaluation incomplete. This is not a complete CSP standards linter.
 
-**Example:**
+No report-only crawl can fully test enforcement behavior. Exercise real flows
+in staging before deploying the policy, particularly forms, embedding and
+authenticated interactions. A hostile page can manipulate its own behavior or
+instrumentation: CSPresso is not an adversarial policy verifier.
+
+## JSON schema v2 and permission evidence
+
+The JSON includes:
+
+- `csp` and `directives`: the same complete generated policy, including defaults,
+  hashes and nonce templates. Earlier versions exposed only raw external
+  origins through `directives`.
+- `visited`: successfully scanned final HTML URLs.
+- `pages`: requested/final URLs, redirects, HTTP status, completion status and
+  whether candidate injection was confirmed.
+- `observations`: document/frame URL, directive, resource URL/origin or inline
+  hash, and observation kind. Requests are observations, not proof that a
+  permission is necessary or that a response succeeded.
+- `violations`, `evaluated_policy`, `notes`, `errors` and `complete`.
+- `header_bytes`: UTF-8 size including the header name and separator, excluding
+  HTTP framing. `--header-budget` is an advisory threshold, not a deployment
+  guarantee.
+- `sourcemaps`: optional developer metadata collected with `--include-sourcemaps`.
+
+**Source-map behavior changed:** map origins are no longer automatically added
+to `connect-src`. A debugging pointer is not proof the application needs that
+permission. Source-map URLs are validated as HTTP(S) origins. Body scans are
+skipped for unknown, compressed or large response sizes; headers can still be
+inspected. Invalid metadata cannot inject CSP directives.
+
+Output may include sensitive URL query strings and internal hostnames. Store
+reports as restricted artifacts; automatic URL-secret redaction is not provided.
+Human-readable diagnostics escape control characters.
+
+## Nonces, hashes and optional permissions
+
+Detected nonce requirements are tracked separately for scripts and styles,
+including external script/stylesheet elements. `{NONCE}` is a template: your
+server must replace it with a fresh unpredictable nonce on **every response**
+and put matching values in the relevant HTML elements. Observed nonce values
+are not emitted.
+
+Hashes depend on stable inline content. Data-only script blocks such as JSON-LD
+are not treated as executable JavaScript. Inline attributes require
+`'unsafe-hashes'`; moving code into external files or nonce-bearing elements is
+preferable. A settled DOM snapshot can miss code removed earlier in the load.
+
+Optional flags: `--unsafe-eval`, `--allow-blob`, and
+`--upgrade-insecure-requests`. They deliberately affect policy recommendations;
+review their implications before using the output. Baseline `form-action`,
+`frame-ancestors` and other defaults are recommendations, not inferred business
+requirements.
+
+## Bounds and coverage
+
+Defaults:
+
+| Option | Default |
+| --- | --- |
+| `--max-pages` | 10 attempted pages |
+| `--timeout-ms` | 20000 per navigation |
+| `--settle-ms` | 1500 after load/network settling |
+| `--scan-timeout` | 120 seconds, excluding browser installation |
+| `--max-requests` | 2000 intercepted HTTP requests |
+| `--max-observations` | 10000 observation/violation records |
+| `--header-budget` | 8192 bytes, advisory |
+
+A page-budget boundary is expected finite coverage and is recorded in notes;
+request/observation truncation or a wall-clock deadline makes the scan
+incomplete. Inline collections have count/text limits and disclose truncation.
+These limits are not a hard browser memory, network-byte or disk quota. Use
+OS/container limits for hostile content; interception may buffer responses.
+
+Service workers are blocked to make interception deterministic. Apps requiring
+them need separate testing. Dedicated worker sources can be observed, but
+worker-internal requests without document provenance are not merged into the
+page policy. WebSockets are captured explicitly when frame attribution is
+unambiguous; mixed-origin frame ambiguity produces an incomplete result.
+CSS-embedded data URLs, removed early scripts, shadow DOM, user interactions,
+other browsers and authenticated flows are not exhaustively covered.
+
+## Browser cache
+
+Default: a `cspresso/pw-browsers` directory in the user's cache location, e.g.
+`~/.cache/cspresso/pw-browsers` on Linux. Override with `--browsers-path` or
+`PLAYWRIGHT_BROWSERS_PATH`. The latter's special value `0` retains Playwright's
+package-local convention. Explicit directories also work with `--no-install`.
+
+Caches must be owned by the current account and not writable by other users.
+Symlink paths and unsafe ancestor directories are rejected. There is no shared
+`/tmp` fallback. Installation uses an OS-released lock, so a crashed process
+does not leave a permanent stale lock.
+
+## Tests
 
 ```bash
-❯ poetry run cspresso https://mig5.net --evaluate "default-src 'none'" --bypass-csp --json
-{
-  "csp": "base-uri 'self'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; style-src 'self' 'sha256-4Su6mBWzEIFnH4pAGMOuaeBrstwJN4Z3pq/s1Kn4/KQ=' 'unsafe-hashes'; style-src-attr 'sha256-4Su6mBWzEIFnH4pAGMOuaeBrstwJN4Z3pq/s1Kn4/KQ=' 'unsafe-hashes';",
-  "directives": {},
-  "evaluated_policy": "default-src 'none'",
-  "nonce_detected": false,
-  "notes": [
-    "Detected inline attribute code (style=\"...\" and/or on*=\"...\"). Hashes for these require 'unsafe-hashes' (and modern browsers may use style-src-attr/script-src-attr)."
-  ],
-  "violations": [
-    {
-      "console": true,
-      "disposition": "report",
-      "documentURI": "https://mig5.net/",
-      "text": "Loading the stylesheet 'https://mig5.net/style.css' violates the following Content Security Policy directive: \"default-src 'none'\". Note that 'style-src-elem' was not explicitly set, so 'default-src' is used as a fallback. The policy is report-only, so the violation has been logged but no further action has been taken.",
-      "type": "info"
-    },
-    {
-      "console": true,
-      "disposition": "report",
-      "documentURI": "https://mig5.net/static/mig5.asc",
-      "text": "Applying inline style violates the following Content Security Policy directive 'default-src 'none''. Either the 'unsafe-inline' keyword, a hash ('sha256-4Su6mBWzEIFnH4pAGMOuaeBrstwJN4Z3pq/s1Kn4/KQ='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. Note also that 'style-src' was not explicitly set, so 'default-src' is used as a fallback. The policy is report-only, so the violation has been logged but no further action has been taken.",
-      "type": "info"
-    }
-  ],
-  "visited": [
-    "https://mig5.net",
-    "https://mig5.net/",
-    "https://mig5.net/static/mig5.asc"
-  ]
-}
-
-cspresso on  main [!] via 🐍 v3.13.5 took 18s
-❯ echo $?
-1
+poetry run pytest                         # deterministic unit/control-flow tests
+./tests.sh                                # install Chromium and run local browser fixtures too
+poetry run pytest --run-browser            # local fixtures, browser already installed
+poetry run pytest --run-network            # optional live-site smoke test
 ```
 
-## Full usage info
+`tests.sh` uses the same browser cache for installation and scans. Browser tests
+use loopback HTTP servers, not snapshots of a changing public website. CI's
+Docker test step explicitly sets `CSPRESSO_TEST_NO_SANDBOX=1` for these trusted
+fixtures because the existing runner runs as root. This test-only environment
+variable is read by the tests, **not the production CLI**. Prefer a non-root,
+sandbox-capable runner and remove that override when available.
 
-```
-usage: cspresso [-h] [--max-pages MAX_PAGES] [--timeout-ms TIMEOUT_MS] [--settle-ms SETTLE_MS] [--headed] [--no-install] [--with-deps] [--browsers-path BROWSERS_PATH] [--allow-blob] [--unsafe-eval]
-                [--upgrade-insecure-requests] [--include-sourcemaps] [--bypass-csp] [--evaluate CSP] [--ignore-non-html] [--json]
-                url
-
-Crawl up to N pages (same-origin) with Playwright and generate a draft CSP.
-
-positional arguments:
-  url                   Start URL (e.g. https://example.com)
-
-options:
-  -h, --help            show this help message and exit
-  --max-pages MAX_PAGES
-                        Maximum number of pages to visit (default: 10)
-  --timeout-ms TIMEOUT_MS
-                        Navigation timeout in ms (default: 20000)
-  --settle-ms SETTLE_MS
-                        Extra time after networkidle to allow hydration/delayed requests (default: 1500)
-  --headed              Run with a visible browser window (not headless)
-  --no-install          Do not auto-install Chromium if missing
-  --with-deps           When installing, include Playwright OS deps (Linux). May require elevated privileges.
-  --browsers-path BROWSERS_PATH
-                        Directory to install/playwright browsers (default: ./.pw-browsers).
-  --allow-blob          Include blob: in common directives (drafty)
-  --unsafe-eval         Include 'unsafe-eval' in script-src (not recommended)
-  --upgrade-insecure-requests
-                        Add upgrade-insecure-requests directive
-  --include-sourcemaps  Analyze JS/CSS for sourceMappingURL and add map origins to connect-src
-  --bypass-csp          Strip any existing CSP/CSP-Report-Only response headers from HTML documents (useful for discovery or evaluation).
-  --evaluate CSP        Inject the provided CSP string as Content-Security-Policy-Report-Only on HTML documents and exit 1 if any Report-Only violations are detected. Quote the value.
-  --ignore-non-html     Ignore non-HTML pages that get crawled (which might trigger Chromium's word-wrap hash: https://stackoverflow.com/a/69838710)
-  --json                Output JSON instead of a header line
-```
+See `cspresso --help` for all options and [CHANGELOG.md](CHANGELOG.md) for changes.
