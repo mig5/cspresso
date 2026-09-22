@@ -16,6 +16,8 @@
 
 ### Fixed
 
+ * Fix CI browser tests failing before launch when the runner cache is writable by others: use a private temporary browser directory by default in `tests.sh`, validate before installation, preserve explicit safe cache overrides and clean temporary files even on test failure.
+
  * Invoke the report-only violation listener correctly, attribute records to the candidate policy/document, preserve distinct findings and stop trusting page-authored console strings as violations.
  * Return exit 2 for incomplete/error scans, invalid arguments, unconfirmed injection and remaining enforcing policies; retain exit 1 for completed scans with violations.
  * Resolve links through browser `a.href`, respecting nested paths, query/fragment links and `<base>`. Canonicalise equivalent origins/root URLs and record final navigation URLs.

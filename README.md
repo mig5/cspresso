@@ -214,7 +214,10 @@ poetry run pytest --run-browser            # local fixtures, browser already ins
 poetry run pytest --run-network            # optional live-site smoke test
 ```
 
-`tests.sh` uses the same browser cache for installation and scans. Browser tests
+`tests.sh` creates a private temporary browser directory by default, shares it
+between installation and scans, and removes it on exit. This avoids permissive
+runner caches such as `/root/.cache`. Set `PLAYWRIGHT_BROWSERS_PATH` explicitly
+to reuse a safe cache; it is validated before installation and is not removed. Browser tests
 use loopback HTTP servers, not snapshots of a changing public website. CI's
 Docker test step explicitly sets `CSPRESSO_TEST_NO_SANDBOX=1` for these trusted
 fixtures because the existing runner runs as root. This test-only environment
