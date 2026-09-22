@@ -190,3 +190,34 @@ def test_http_error_is_incomplete(sites):
     result = scan(origins[0] + "/missing", max_pages=1)
     assert result.exit_code == 2
     assert result.pages[0]["status"] == "failed"
+
+
+@pytest.mark.parametrize("hops", [1, 3])
+def test_redirect_chain_uses_final_base_and_candidate(sites, hops):
+    origins, put = sites
+    for i in range(hops):
+        put(
+            0,
+            f"/hop/{i}",
+            status=302,
+            Location=f"/hop/{i + 1}" if i + 1 < hops else "/docs/end",
+        )
+    put(0, "/docs/end", '<script>window.test=1</script><a href="child">child</a>')
+    put(0, "/docs/child", "child")
+    result = scan(origins[0] + "/hop/0", max_pages=2, evaluate="default-src 'none'")
+    assert result.complete, result.errors
+    assert set(result.visited) == {origins[0] + "/docs/end", origins[0] + "/docs/child"}
+    assert result.pages[0]["evaluated"]
+    assert len(result.pages[0]["redirects"]) == hops
+    assert any(
+        v.get("effectiveDirective") == "script-src-elem" for v in result.violations
+    )
+
+
+def test_redirect_loop_is_incomplete(sites):
+    origins, put = sites
+    put(0, "/a", status=302, Location="/b")
+    put(0, "/b", status=302, Location="/a")
+    result = scan(origins[0] + "/a", max_pages=1, evaluate="default-src 'none'")
+    assert result.exit_code == 2
+    assert any("Redirect loop" in e for e in result.errors)

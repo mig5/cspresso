@@ -16,6 +16,8 @@
 
 ### Fixed
 
+ * Fix a Chromium error-page navigation race when following same-origin redirects: finish intercepted redirect hops with empty, locked-down documents before navigating to validated destinations; preserve scope checks, redirect limits and final-document policy injection.
+
  * Fix CI browser tests failing before launch when the runner cache is writable by others: use a private temporary browser directory by default in `tests.sh`, validate before installation, preserve explicit safe cache overrides and clean temporary files even on test failure.
 
  * Invoke the report-only violation listener correctly, attribute records to the candidate policy/document, preserve distinct findings and stop trusting page-authored console strings as violations.

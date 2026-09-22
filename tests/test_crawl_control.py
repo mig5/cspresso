@@ -241,7 +241,8 @@ def test_foreign_redirect_response_is_never_fulfilled(fake):
     response.dispose.assert_awaited_once()
 
 
-def test_same_origin_redirect_is_navigated_at_real_url(fake):
+@pytest.mark.parametrize("redirect_loop", [False, True])
+def test_same_origin_redirect_is_navigated_at_real_url(fake, redirect_loop):
     context = fake[0]
     original = context.new_page
 
@@ -250,10 +251,12 @@ def test_same_origin_redirect_is_navigated_at_real_url(fake):
         original_goto = page.goto
 
         async def goto(url, **kwargs):
-            if url == "https://example.com/":
+            if url == "https://example.com/" or redirect_loop:
                 page.url = url
                 response = SimpleNamespace(
-                    status=302, headers={"location": "/final"}, dispose=AsyncMock()
+                    status=302,
+                    headers={"location": "/" if url.endswith("/final") else "/final"},
+                    dispose=AsyncMock(),
                 )
                 route = SimpleNamespace(
                     fetch=AsyncMock(return_value=response),
@@ -266,8 +269,17 @@ def test_same_origin_redirect_is_navigated_at_real_url(fake):
                         url=url, resource_type="document", frame=page, method="GET"
                     ),
                 )
-                route.fulfill.assert_not_awaited()
-                raise RuntimeError("navigation aborted for explicit redirect")
+                route.abort.assert_not_awaited()
+                route.fulfill.assert_awaited_once_with(
+                    status=200,
+                    headers={
+                        "content-type": "text/html",
+                        "content-security-policy": "default-src 'none'; sandbox",
+                    },
+                    body="",
+                )
+                response.dispose.assert_awaited_once()
+                return SimpleNamespace(status=200)
             return await original_goto(url, **kwargs)
 
         page.goto = goto
@@ -275,6 +287,11 @@ def test_same_origin_redirect_is_navigated_at_real_url(fake):
 
     context.new_page = new_page
     result = scan()
+    if redirect_loop:
+        assert result.exit_code == 2
+        assert any("Redirect loop" in e for e in result.errors)
+        assert not result.visited
+        return
     assert result.complete, result.errors
     assert result.visited == ["https://example.com/final"]
     assert result.pages[0]["redirects"] == ["https://example.com/"]

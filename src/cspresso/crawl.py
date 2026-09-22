@@ -602,7 +602,17 @@ async def crawl_and_generate_csp(
                                     "Non-GET redirect cannot be replayed safely; scan its final URL explicitly"
                                 )
                             redirect_targets[frame] = destination
-                            return await route.abort()
+                            # Finish this navigation without starting Chromium's error
+                            # page, which can otherwise interrupt the next goto().
+                            # No redirect body or headers are exposed to the page.
+                            return await route.fulfill(
+                                status=200,
+                                headers={
+                                    "content-type": "text/html",
+                                    "content-security-policy": "default-src 'none'; sandbox",
+                                },
+                                body="",
+                            )
                         if 300 <= response.status < 400:
                             raise RuntimeError("Redirect response has no Location")
                         if origin_of(response.url) != base_origin:
@@ -805,22 +815,25 @@ async def crawl_and_generate_csp(
                                     response = await frame.goto(
                                         target, wait_until="load", timeout=timeout_ms
                                     )
-                                    return response, chain
                                 except Exception:
-                                    destination = redirect_targets.pop(frame, None)
-                                    if destination is None:
-                                        raise
-                                    chain.append(target)
-                                    if destination in chain or len(chain) >= 10:
-                                        raise RuntimeError(
-                                            "Redirect loop or redirect limit exceeded"
-                                        )
-                                    target = destination
+                                    # A pending redirect is not permission to suppress
+                                    # navigation errors or replay an uncertain request.
+                                    redirect_targets.pop(frame, None)
+                                    raise
+                                destination = redirect_targets.pop(frame, None)
+                                if destination is None:
+                                    return response, chain
+                                chain.append(target)
+                                if destination in chain or len(chain) >= 10:
+                                    raise RuntimeError(
+                                        "Redirect loop or redirect limit exceeded"
+                                    )
+                                target = destination
 
                         resp, chain = await navigate(page.main_frame, url)
                         if chain:
                             item["redirects"] = chain
-                        # Initial child-frame redirects were aborted at their first hop.
+                        # Initial child-frame redirects loaded inert placeholders.
                         # Resume at the real target URL, so CSP and relative URLs use
                         # that document's origin. Never replay a POST navigation.
                         for _ in range(10):
